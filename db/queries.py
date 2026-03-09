@@ -52,3 +52,18 @@ FROM (
 )
 ORDER BY timestamps ASC
 """
+
+UPSERT_FORECASTS = """
+INSERT INTO forecasts (
+    symbol, interval, asof_timestamp, target_timestamp, model_version,
+    open, high, low, close, volume, amount
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (symbol, interval, asof_timestamp, target_timestamp, model_version) DO UPDATE SET
+    open = EXCLUDED.open,
+    high = EXCLUDED.high,
+    low = EXCLUDED.low,
+    close = EXCLUDED.close,
+    volume = EXCLUDED.volume,
+    amount = EXCLUDED.amount,
+    generated_at = NOW();
+"""
