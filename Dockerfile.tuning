@@ -1,0 +1,22 @@
+FROM python:3.12
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gettext-base openssh-client postgresql-client \
+    && curl -O https://dl.min.io/client/mc/release/linux-amd64/mc \
+    && chmod +x mc && mv mc /usr/local/bin/ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --group scripts
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY db db
+COPY scripts scripts
+COPY tuning .
+
+CMD ["./run.sh"]

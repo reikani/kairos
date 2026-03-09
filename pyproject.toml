@@ -1,0 +1,31 @@
+[project]
+name = "kairos"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary,pool]==3.3.2",
+]
+
+[dependency-groups]
+scripts = [
+    "boto3==1.42.27",
+    "einops==0.8.1",
+    "huggingface-hub==0.33.1",
+    "massive==2.0.3",
+    "numpy",
+    "pandas",
+    "safetensors==0.6.2",
+    "torch==2.7.0; platform_system == 'Darwin'",
+    "torch==2.7.0+cu128; platform_system != 'Darwin'",
+    "tqdm",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "platform_system != 'Darwin'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
