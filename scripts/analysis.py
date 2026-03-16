@@ -1,6 +1,7 @@
 import json
+import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -9,8 +10,6 @@ from db import conn
 
 KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 MODEL = "XBTCUSD/15m/2025-09-01--2026-03-08"
-MIN_CLOSE_TS = int(datetime(2026, 3, 8, 5, 0, tzinfo=timezone.utc).timestamp())
-MAX_CLOSE_TS = int(datetime(2026, 3, 9, 4, 1, tzinfo=timezone.utc).timestamp())
 
 ALL_FORECASTS = """
 SELECT target_timestamp, asof_timestamp,
@@ -18,8 +17,7 @@ SELECT target_timestamp, asof_timestamp,
 FROM forecasts
 WHERE symbol = 'X:BTCUSD' AND interval = '15m'
   AND model_version = %s
-  AND target_timestamp >= '2026-03-08 05:00+00'
-  AND target_timestamp <= '2026-03-09 04:00+00'
+  AND target_timestamp >= %s AND target_timestamp <= %s
 ORDER BY target_timestamp, asof_timestamp
 """
 
@@ -27,16 +25,15 @@ ACTUAL_CANDLES = """
 SELECT timestamp, open::float, high::float, low::float, close::float
 FROM candles
 WHERE symbol = 'X:BTCUSD' AND interval = '15m'
-  AND timestamp >= '2026-03-08 05:00+00'
-  AND timestamp <= '2026-03-09 04:00+00'
+  AND timestamp >= %s AND timestamp <= %s
 ORDER BY timestamp
 """
 
 
-def fetch_kalshi():
+def fetch_kalshi(min_ts, max_ts):
     url = (
         f"{KALSHI_BASE}/markets?series_ticker=KXBTC15M&status=settled"
-        f"&limit=200&min_close_ts={MIN_CLOSE_TS}&max_close_ts={MAX_CLOSE_TS}"
+        f"&limit=200&min_close_ts={min_ts}&max_close_ts={max_ts}"
     )
     with urllib.request.urlopen(url) as r:
         data = json.loads(r.read())
@@ -55,14 +52,35 @@ def fetch_kalshi():
 
 
 def main():
-    print("Loading data...")
-    kalshi = fetch_kalshi()
+    # Usage: python -m scripts.analysis 2026-03-08 -5
+    date_str = sys.argv[1] if len(sys.argv) > 1 else "2026-03-08"
+    utc_offset = int(sys.argv[2]) if len(sys.argv) > 2 else -5
+
+    d = datetime.fromisoformat(date_str)
+    # First candle open: midnight ET → UTC
+    first_utc = datetime(d.year, d.month, d.day, tzinfo=timezone.utc) - timedelta(
+        hours=utc_offset
+    )
+    # Last candle open: 23:45 ET → UTC
+    last_utc = first_utc + timedelta(hours=23, minutes=45)
+    # Kalshi close timestamps: first_utc + 15m to last_utc + 15m
+    min_close_ts = int((first_utc + timedelta(minutes=15)).timestamp())
+    max_close_ts = int((last_utc + timedelta(minutes=16)).timestamp())
+
+    first_str = first_utc.strftime("%Y-%m-%d %H:%M+00")
+    last_str = last_utc.strftime("%Y-%m-%d %H:%M+00")
+
+    print(f"Analyzing {date_str} ET (UTC offset {utc_offset})")
+    print(f"  UTC range: {first_str} to {last_str}")
+
+    kalshi = fetch_kalshi(min_close_ts, max_close_ts)
+    print(f"  Kalshi markets: {len(kalshi)}")
 
     with conn() as connection:
         with connection.cursor() as cur:
-            cur.execute(ALL_FORECASTS, (MODEL,))
+            cur.execute(ALL_FORECASTS, (MODEL, first_str, last_str))
             fc_rows = cur.fetchall()
-            cur.execute(ACTUAL_CANDLES)
+            cur.execute(ACTUAL_CANDLES, (first_str, last_str))
             candle_rows = cur.fetchall()
 
     fc_df = pd.DataFrame(fc_rows)
